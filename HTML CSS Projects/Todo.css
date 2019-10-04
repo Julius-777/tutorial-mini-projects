@@ -1,0 +1,17 @@
+body {
+	background: orange;
+}
+
+li{
+	border: 2px solid white;
+}
+
+
+#Last_li{
+	background: yellow;
+}
+
+
+.completed {
+	text-decoration: line-through;
+}
