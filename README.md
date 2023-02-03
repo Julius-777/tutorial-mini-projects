@@ -1,1 +1,1 @@
-basic small web projects/exercises
+## Small Mini Web projects
