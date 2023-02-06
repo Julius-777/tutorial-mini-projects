@@ -1,4 +1,4 @@
 # Tutorial mini projects
 
 ## Acknowledgements
-ptest_basics - [pixegami](https://github.com/pixegami/simple-pytest-tutorial)
+PyTest Basics - [pixegami](https://github.com/pixegami/simple-pytest-tutorial)
