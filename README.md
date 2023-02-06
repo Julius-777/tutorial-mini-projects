@@ -1,1 +1,1 @@
-# Small Mini Web projects
+# Tutorial mini projects
