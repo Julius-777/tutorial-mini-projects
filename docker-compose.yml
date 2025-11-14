@@ -1,0 +1,164 @@
+# docker-compose.yml
+# Cognitive Search - Multi-Service PDF Search and RAG Application
+# This file defines the complete local development environment
+
+version: '3.8'
+
+volumes:
+  meili-data:
+  mongo-data:
+
+services:
+  # 1. The Frontend (React + Vite + Tailwind CSS)
+  # Serves the single-page application (SPA), user interface, PDF viewer, and annotation tools
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "8080:8080" # Port for Vite/React dev server
+    environment:
+      - VITE_API_URL=http://localhost:3080
+    depends_on:
+      - api
+    networks:
+      - cognitive-search-network
+
+  # 2. The API Gateway (Node.js + Express.js) - LibreChat-inspired
+  # Central orchestrator (BFF). Handles authentication, user requests, metadata management,
+  # AI model proxying, and communication with all internal services
+  api:
+    build:
+      context: ./api
+    container_name: api
+    ports:
+      - "3080:3080"
+    volumes:
+      - ./config.yaml:/app/config.yaml # Mount the config file
+    environment:
+      # Tell the app where the config is
+      - CONFIG_PATH=/app/config.yaml
+      # Pass in secrets from .env file
+      - JWT_SECRET=${JWT_SECRET}
+      - MONGO_CONNECTION_STRING=mongodb://mongo:27017/pdf-search-app
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_HOST=http://meilisearch:7700
+      - REDIS_URL=redis://redis:6379
+      - SESSION_SECRET=${SESSION_SECRET}
+      # AI Service API Keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - BEDROCK_ACCESS_KEY=${BEDROCK_ACCESS_KEY}
+      - BEDROCK_SECRET_KEY=${BEDROCK_SECRET_KEY}
+      - BEDROCK_REGION=${BEDROCK_REGION:-us-east-1}
+      # Internal service URLs (can also be in config.yaml)
+      - CONVERTER_SERVICE_URL=http://converter:3000
+      - OCR_SERVICE_URL=http://ocr:3000
+    depends_on:
+      - meilisearch
+      - mongo
+      - redis
+      - converter
+      - ocr
+    networks:
+      - cognitive-search-network
+
+  # 3. Session Store (Redis) - From LibreChat stack
+  # Manages user sessions, API rate limiting, and short-term response caching
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - cognitive-search-network
+    command: redis-server --appendonly yes
+
+  # 4. Search Engine (Meilisearch)
+  # The core hybrid search engine. Stores all processed document text, metadata, and vector embeddings.
+  # Handles all lexical (typo-tolerant, proximity) and semantic (vector) search queries
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: meilisearch
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_ENV=development
+      - MEILI_HTTP_ADDR=0.0.0.0:7700
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili-data:/meili_data
+    networks:
+      - cognitive-search-network
+
+  # 5. Metadata DB (MongoDB)
+  # Stores all user-generated and relational data: user accounts, annotations,
+  # bookmarks, tags, folder structures, and document metadata
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    environment:
+      - MONGO_INITDB_DATABASE=pdf-search-app
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - cognitive-search-network
+
+  # 6. Document Converter (LibreOffice Service)
+  # A specialized microservice. Exposes a POST /convert endpoint to transform
+  # Office (Word, PowerPoint) and iWork (Pages, Keynote) files into PDF
+  converter:
+    build:
+      context: ./microservices/converter
+    container_name: converter
+    ports:
+      - "3001:3000" # Expose converter service on host port 3001
+    networks:
+      - cognitive-search-network
+
+  # 7. OCR Service (OCRmyPDF)
+  # A specialized microservice. Exposes a POST /ocr endpoint for "Pure OCR"
+  # on scanned or text-protected PDFs
+  ocr:
+    build:
+      context: ./microservices/ocr
+    container_name: ocr
+    ports:
+      - "3002:3000" # Expose ocr service on host port 3002
+    networks:
+      - cognitive-search-network
+
+  # 8. Ingestion Orchestrator (Python + LangChain + Docling)
+  # Asynchronous service. Orchestrates the full RAG ingestion pipeline:
+  # calls converter/OCR, performs hierarchical chunking, generates embeddings,
+  # and indexes data into Meilisearch
+  ingestion:
+    build:
+      context: ./ingestion
+    container_name: ingestion
+    volumes:
+      - ./config.yaml:/app/config.yaml # Needs config to find other services
+      - ./local-documents:/app/documents # Mount local docs for testing
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_HOST=http://meilisearch:7700
+      - MONGO_CONNECTION_STRING=mongodb://mongo:27017/pdf-search-app
+      - CONVERTER_SERVICE_URL=http://converter:3000
+      - OCR_SERVICE_URL=http://ocr:3000
+      # AI Service API Keys for embeddings
+      - BEDROCK_ACCESS_KEY=${BEDROCK_ACCESS_KEY}
+      - BEDROCK_SECRET_KEY=${BEDROCK_SECRET_KEY}
+      - BEDROCK_REGION=${BEDROCK_REGION:-us-east-1}
+    depends_on:
+      - meilisearch
+      - mongo
+      - converter
+      - ocr
+    networks:
+      - cognitive-search-network
+
+networks:
+  cognitive-search-network:
+    driver: bridge

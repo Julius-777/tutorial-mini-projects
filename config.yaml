@@ -1,0 +1,179 @@
+# config.yaml
+# Cognitive Search - Application Configuration
+# This file contains non-secret application-level configuration
+# Inspired by LibreChat's librechat.yaml pattern
+
+# =============================================================================
+# Application Settings
+# =============================================================================
+app:
+  name: "Cognitive Search"
+  version: "1.0.0"
+  port: 3080
+  environment: "development"
+
+  # CORS Configuration
+  cors:
+    enabled: true
+    origins:
+      - "http://localhost:8080"
+      - "http://localhost:3080"
+
+  # File Upload Settings
+  upload:
+    max_file_size_mb: 100
+    allowed_file_types:
+      - "application/pdf"
+      - "application/msword"
+      - "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      - "application/vnd.ms-powerpoint"
+      - "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      - "application/vnd.apple.pages"
+      - "application/vnd.apple.keynote"
+      - "application/rtf"
+
+# =============================================================================
+# RAG (Retrieval-Augmented Generation) Pipeline Configuration
+# =============================================================================
+rag:
+  # Embedding Configuration
+  embedding:
+    model_id: "amazon.titan-embed-text-v1"
+    provider: "bedrock"  # Options: bedrock, openai
+    dimensions: 1536     # Titan: 1536, OpenAI ada-002: 1536
+    batch_size: 25       # Number of chunks to embed in parallel
+
+  # Chunking Strategy
+  chunking:
+    strategy: "hierarchical"  # Options: hierarchical, fixed, semantic
+    chunk_size: 1000          # Max characters per chunk
+    chunk_overlap: 200        # Overlap between chunks
+    respect_structure: true   # Use Docling's structure-aware parsing
+
+  # Retrieval Configuration
+  retrieval:
+    top_k: 5                  # Number of chunks to retrieve
+    hybrid_search: true       # Enable hybrid (text + vector) search
+    rerank: false             # Enable re-ranking (future feature)
+
+  # Generation Configuration
+  generation:
+    model_id: "anthropic.claude-3-sonnet-20240229-v1:0"
+    provider: "bedrock"       # Options: bedrock, openai
+    temperature: 0.7
+    max_tokens: 2048
+    stream: true              # Enable streaming responses
+
+# =============================================================================
+# Internal Microservices URLs
+# =============================================================================
+services:
+  # Meilisearch Configuration
+  meilisearch:
+    host: "http://meilisearch:7700"
+    index_name: "document-index"
+    # These match Section 3.2 of the architecture document
+    settings:
+      searchableAttributes:
+        - "title"
+        - "content_text"
+        - "author"
+      filterableAttributes:
+        - "document_id"
+        - "user_id"
+        - "last_modified"
+        - "structure_type"
+        - "page_number"
+      sortableAttributes:
+        - "last_modified"
+      rankingRules:
+        - "words"
+        - "typo"
+        - "proximity"
+        - "attribute"
+        - "sort"
+        - "exactness"
+      embedders:
+        default:
+          source: "userProvided"
+          dimensions: 1536
+
+  # MongoDB Configuration
+  mongodb:
+    database_name: "pdf-search-app"
+    collections:
+      users: "users"
+      documents: "documents"
+      annotations: "annotations"
+      user_doc_meta: "user_doc_meta"
+
+  # Redis Configuration
+  redis:
+    host: "redis"
+    port: 6379
+    db: 0
+    session_ttl: 86400  # 24 hours in seconds
+
+  # Document Converter Service
+  converter:
+    url: "http://converter:3000"
+    endpoint: "/convert"
+    timeout_ms: 60000  # 1 minute timeout
+
+  # OCR Service
+  ocr:
+    url: "http://ocr:3000"
+    endpoint: "/ocr"
+    timeout_ms: 120000  # 2 minute timeout for large PDFs
+    force_ocr: true     # Always use --force-ocr flag (Pure OCR mode)
+
+# =============================================================================
+# Search Features Configuration
+# Mapping to "PDF Search" features from Table 2 in architecture document
+# =============================================================================
+search:
+  features:
+    ultra_fast_search: true
+    page_ranking: true
+    word_distance_algorithm: true  # Meilisearch "proximity" rule
+    keyword_placement_boost: true  # Meilisearch "attribute" rule
+    typo_tolerance: true           # Meilisearch "typo" rule
+    wildcard_search: true          # Prefix search support
+    semantic_search: true          # Hybrid search with embeddings
+    recency_boost: true            # "sort" by last_modified
+
+  # Typo Tolerance Settings (Meilisearch defaults)
+  typo_tolerance:
+    enabled: true
+    min_word_size_for_typos:
+      one_typo: 5
+      two_typos: 9
+
+# =============================================================================
+# Annotation System Configuration
+# Implements the "separate storage" model from Section 5.2
+# =============================================================================
+annotations:
+  enabled: true
+  types:
+    - "HIGHLIGHT"
+    - "UNDERLINE"
+    - "STRIKETHROUGH"
+    - "BOOKMARK"
+    - "NOTE"
+  colors:
+    - "yellow"
+    - "green"
+    - "blue"
+    - "pink"
+    - "purple"
+  max_per_document: 1000
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  level: "info"  # Options: debug, info, warn, error
+  format: "json" # Options: json, simple
+  outputs:
+    - "console"
